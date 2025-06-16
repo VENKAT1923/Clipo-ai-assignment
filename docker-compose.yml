@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # MongoDB
+  mongodb:
+    image: mongo:7.0
+    container_name: clipo-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: clipo_ai
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - clipo-network
+
+  # Redis
+  redis:
+    image: redis:7.2-alpine
+    container_name: clipo-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - clipo-network
+
+  # FastAPI Application
+  web:
+    build: .
+    container_name: clipo-web
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=/app/uploads
+      - THUMBNAIL_DIR=/app/thumbnails
+      - DATABASE_NAME=clipo_ai
+      - COLLECTION_NAME=videos
+    volumes:
+      - ./uploads:/app/uploads
+      - ./thumbnails:/app/thumbnails
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - clipo-network
+
+  # Celery Worker
+  celery-worker:
+    build: .
+    container_name: clipo-celery
+    restart: unless-stopped
+    command: celery -A tasks worker --loglevel=info
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=/app/uploads
+      - THUMBNAIL_DIR=/app/thumbnails
+      - DATABASE_NAME=clipo_ai
+      - COLLECTION_NAME=videos
+    volumes:
+      - ./uploads:/app/uploads
+      - ./thumbnails:/app/thumbnails
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - clipo-network
+
+  # Celery Flower (Optional - for monitoring)
+  flower:
+    build: .
+    container_name: clipo-flower
+    restart: unless-stopped
+    command: celery -A tasks flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - clipo-network
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  clipo-network:
+    driver: bridge
